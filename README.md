@@ -1,4 +1,4 @@
-# page-template
+# page-info
 Give information about a web page 
 
 Takes a website URL as an input and provides general information
