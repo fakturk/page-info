@@ -4,7 +4,7 @@ Give information about a web page
 Takes a website URL as an input and provides general information
 about the contents of the page:
 
-- [ ] HTML Version
+- [X] HTML Version
 - [ ]  Page Title
 - [ ]  Headings count by level
 - [ ]  Amount of internal and external links
