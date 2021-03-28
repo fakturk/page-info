@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,8 +71,68 @@ func getInfo(url string) string {
 	for _, heading := range keys {
 		responseBuilder(&response, heading, strconv.Itoa(headings[heading]))
 	}
+	allLinks := extractLinks(doc)
+	baseUrl := getBaseUrl(url)
 
+	//for _, link := range allLinks {
+	//	//fmt.Println(link)
+	//	responseBuilder(&response, "link", link)
+	//}
+	fmt.Println("base url: ", baseUrl)
+	internalLinks, externalLinks := separateLinks(baseUrl, allLinks)
+	responseBuilder(&response, "Amount of internal links", strconv.Itoa(len(internalLinks)))
+	responseBuilder(&response, "Amount of external links", strconv.Itoa(len(externalLinks)))
+	//for _, link := range internalLinks {
+	//	//fmt.Println(link)
+	//	responseBuilder(&response, "internal link", link)
+	//
+	//}
+	//externalLinks:=getExternalLinks(allLinks,internalLinks)
+	//for _, link := range externalLinks {
+	//	//fmt.Println(link)
+	//	responseBuilder(&response, "external link", link)
+	//
+	//}
 	return response
+}
+
+func getBaseUrl(myurl string) string {
+	fmt.Println(">>getBaseUrl()")
+	u, err := url.Parse(myurl)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(u.Host)
+	return u.Host
+}
+func extractLinks(doc *goquery.Document) []string {
+	foundUrls := []string{}
+	if doc != nil {
+		doc.Find("a").Each(func(i int, s *goquery.Selection) {
+			res, _ := s.Attr("href")
+			foundUrls = append(foundUrls, res)
+		})
+		return foundUrls
+	}
+	return foundUrls
+}
+func separateLinks(baseURL string, hrefs []string) ([]string, []string) {
+	internalUrls := []string{}
+	externalUrls := []string{}
+
+	for _, href := range hrefs {
+
+		if strings.HasPrefix(href, baseURL) {
+			internalUrls = append(internalUrls, href)
+		} else if strings.HasPrefix(href, "/") {
+			resolvedURL := fmt.Sprintf("%s%s", baseURL, href)
+			internalUrls = append(internalUrls, resolvedURL)
+		} else if href != "" {
+			externalUrls = append(externalUrls, href)
+		}
+	}
+
+	return internalUrls, externalUrls
 }
 
 // Detect HTML Version From a http doc
