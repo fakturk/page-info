@@ -16,28 +16,52 @@ func responseBuilder(current *string, title, info string) {
 func verifyURL(url string) string {
 	return "http://" + url
 }
-
-// Detect HTML Version From a http URL
-func DetectHTMLTypeFromURL(url string) (string, error) {
-	fmt.Println(">>DetectHTMLTypeFromURL()")
-	var htmlVersion string
-
+func GetDocumentFromURL(url string) (*goquery.Document, error) {
+	fmt.Println(">>GetDocumentFromURL()")
+	var doc *goquery.Document
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Println("Error in get url: ", err)
-		return htmlVersion, err
+		return doc, err
 	}
 	//fmt.Println("resp: ",resp)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return htmlVersion, errors.New("Error Retrieving Document")
+		return doc, errors.New("Error Retrieving Document")
 	}
 
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	doc, err = goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return htmlVersion, err
+		return doc, err
 	}
+	return doc, nil
+}
+
+func getInfo(url string) string {
+	response := ""
+
+	url = verifyURL(url)
+	fmt.Println("url: " + url)
+	responseBuilder(&response, "URL", url)
+	doc, _ := GetDocumentFromURL(url)
+
+	htmlVersion, err := DetectHTMLTypeFromDoc(doc)
+	if err != nil {
+		htmlVersion = "UNDEFINED due to error:" + err.Error()
+	}
+	fmt.Println(htmlVersion)
+	responseBuilder(&response, "HTML Version", htmlVersion)
+	title := getTitle(doc)
+	responseBuilder(&response, "Title", title)
+
+	return response
+}
+
+// Detect HTML Version From a http doc
+func DetectHTMLTypeFromDoc(doc *goquery.Document) (string, error) {
+	fmt.Println(">>DetectHTMLTypeFromDoc()")
+	var htmlVersion string
 
 	html, err := doc.Html()
 	if err != nil {
@@ -49,6 +73,12 @@ func DetectHTMLTypeFromURL(url string) (string, error) {
 
 	return htmlVersion, nil
 
+}
+
+func getTitle(doc *goquery.Document) string {
+	title := doc.Find("title").Text()
+	fmt.Println("title: ", title)
+	return title
 }
 
 var doctypes = make(map[string]string)

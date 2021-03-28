@@ -5,7 +5,7 @@ Takes a website URL as an input and provides general information
 about the contents of the page:
 
 - [X] HTML Version
-- [ ]  Page Title
+- [X]  Page Title
 - [ ]  Headings count by level
 - [ ]  Amount of internal and external links
 - [ ] Amount of inaccessible links
