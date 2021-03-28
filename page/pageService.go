@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +15,8 @@ func responseBuilder(current *string, title, info string) {
 	*current += "\n" + title + ": " + info
 
 }
+
+//TODO: correct this
 func verifyURL(url string) string {
 	return "http://" + url
 }
@@ -54,6 +58,18 @@ func getInfo(url string) string {
 	responseBuilder(&response, "HTML Version", htmlVersion)
 	title := getTitle(doc)
 	responseBuilder(&response, "Title", title)
+	responseBuilder(&response, "Heading Counts", "")
+	headings := getHeadingCount(doc)
+	keys := make([]string, 0)
+	for k, _ := range headings {
+		keys = append(keys, k)
+		fmt.Println(k)
+	}
+	sort.Strings(keys)
+
+	for _, heading := range keys {
+		responseBuilder(&response, heading, strconv.Itoa(headings[heading]))
+	}
 
 	return response
 }
@@ -79,6 +95,29 @@ func getTitle(doc *goquery.Document) string {
 	title := doc.Find("title").Text()
 	fmt.Println("title: ", title)
 	return title
+}
+
+func getHeadingCount(doc *goquery.Document) map[string]int {
+	headings := make(map[string]int)
+	headings["h1"] = 0
+	headings["h2"] = 0
+	headings["h2"] = 0
+	headings["h3"] = 0
+	headings["h4"] = 0
+	headings["h5"] = 0
+	headings["h6"] = 0
+
+	for heading, count := range headings {
+		doc.Find(heading).Each(func(i int, selection *goquery.Selection) {
+			count++
+			//fmt.Println(selection.Contents())
+		})
+		headings[heading] = count
+		fmt.Println("total", heading, ":", count)
+	}
+
+	return headings
+
 }
 
 var doctypes = make(map[string]string)
