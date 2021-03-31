@@ -103,6 +103,12 @@ func getInfo(url string) string {
 	responseBuilder(&response, "Amount of inaccessible links", amountString)
 
 	amount = 0
+	loginFormStatus := checkLoginForm(doc)
+	if loginFormStatus {
+		responseBuilder(&response, "Login Form", "exists")
+	} else {
+		responseBuilder(&response, "Login Form", "not found")
+	}
 	//for _, link := range internalLinks {
 	//	//fmt.Println(link)
 	//	responseBuilder(&response, "internal link", link)
@@ -115,6 +121,20 @@ func getInfo(url string) string {
 	//
 	//}
 	return response
+}
+
+func checkLoginForm(doc *goquery.Document) bool {
+	fmt.Println(">>checkLoginForm()")
+	loginFormExist := false
+	doc.Find("input[type='password']").Each(func(i int, selection *goquery.Selection) {
+		//fmt.Println(selection.)
+		fmt.Println("input field:", selection.Get(0))
+		loginFormExist = true
+
+	})
+	fmt.Println(loginFormExist)
+	fmt.Println("<<checkLoginForm()")
+	return loginFormExist
 }
 
 func getBaseUrl(myurl string) string {

@@ -9,4 +9,4 @@ about the contents of the page:
 - [X]  Headings count by level
 - [X]  Amount of internal and external links
 - [X] Amount of inaccessible links
-- [ ] If a page contains a login form
+- [X] If a page contains a login form
