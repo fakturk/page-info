@@ -9,7 +9,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
+
+var amount uint64
 
 func responseBuilder(current *string, title, info string) {
 	fmt.Println(">>responseBuilder()")
@@ -18,8 +22,13 @@ func responseBuilder(current *string, title, info string) {
 }
 
 //TODO: correct this
-func verifyURL(url string) string {
-	return "http://" + url
+func verifyURL(myUrl string) string {
+	u, _ := url.Parse(myUrl)
+	//fmt.Println(myUrl,u.Host+u.Path)
+	if u.Scheme != "" {
+		return myUrl
+	}
+	return "http://" + myUrl
 }
 func GetDocumentFromURL(url string) (*goquery.Document, error) {
 	fmt.Println(">>GetDocumentFromURL()")
@@ -82,6 +91,18 @@ func getInfo(url string) string {
 	internalLinks, externalLinks := separateLinks(baseUrl, allLinks)
 	responseBuilder(&response, "Amount of internal links", strconv.Itoa(len(internalLinks)))
 	responseBuilder(&response, "Amount of external links", strconv.Itoa(len(externalLinks)))
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go getInaccessibleLinks(internalLinks, &wg)
+	//wg.Add(1)
+	go getInaccessibleLinks(externalLinks, &wg)
+	wg.Wait()
+	//wg.Wait()
+	fmt.Println("total amount:", atomic.LoadUint64(&amount))
+	amountString := fmt.Sprint(atomic.LoadUint64(&amount))
+	responseBuilder(&response, "Amount of inaccessible links", amountString)
+
+	amount = 0
 	//for _, link := range internalLinks {
 	//	//fmt.Println(link)
 	//	responseBuilder(&response, "internal link", link)
@@ -205,4 +226,36 @@ func checkDoctype(html string) string {
 	}
 
 	return version
+}
+
+func getInaccessibleLinks(urls []string, wg *sync.WaitGroup) {
+	fmt.Println(">>getInaccessibleLinks()")
+	defer wg.Done()
+	//var wg sync.WaitGroup
+	for _, url := range urls {
+		wg.Add(1)
+
+		go checkUrl(url, wg)
+		//wg.Done()
+	}
+	//wg.Wait()
+	fmt.Println("<<getInaccessibleLinks()")
+}
+func checkUrl(url string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	url = verifyURL(url)
+	//fmt.Println("checkURL:",url)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Println("Error in get url: ", err)
+		atomic.AddUint64(&amount, 1)
+		fmt.Println("amount :", atomic.LoadUint64(&amount))
+		return
+	}
+	if resp.StatusCode != 200 {
+		fmt.Println(resp.StatusCode, url)
+		atomic.AddUint64(&amount, 1)
+		fmt.Println("amount :", atomic.LoadUint64(&amount))
+		return
+	}
 }

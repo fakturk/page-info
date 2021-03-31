@@ -8,5 +8,5 @@ about the contents of the page:
 - [X]  Page Title
 - [X]  Headings count by level
 - [X]  Amount of internal and external links
-- [ ] Amount of inaccessible links
+- [X] Amount of inaccessible links
 - [ ] If a page contains a login form
