@@ -1,11 +1,9 @@
 package page
 
 import (
-	"errors"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,137 +13,140 @@ import (
 
 var amount uint64
 
-func responseBuilder(current *string, title, info string) {
-	fmt.Println(">>responseBuilder()")
-	*current += "\n" + title + ": " + info
-
-}
-
-//TODO: correct this
-func verifyURL(myUrl string) string {
-	u, _ := url.Parse(myUrl)
-	//fmt.Println(myUrl,u.Host+u.Path)
-	if u.Scheme != "" {
-		return myUrl
-	}
-	return "http://" + myUrl
-}
-func GetDocumentFromURL(url string) (*goquery.Document, error) {
-	fmt.Println(">>GetDocumentFromURL()")
-	var doc *goquery.Document
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Println("Error in get url: ", err)
-		return doc, err
-	}
-	//fmt.Println("resp: ",resp)
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return doc, errors.New("Error Retrieving Document")
-	}
-
-	doc, err = goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return doc, err
-	}
-	return doc, nil
-}
-
+// collect the information about given web page and returns the result
 func getInfo(url string) string {
 	response := ""
 
 	url = verifyURL(url)
-	fmt.Println("url: " + url)
+
 	responseBuilder(&response, "URL", url)
 	doc, _ := GetDocumentFromURL(url)
 
+	//find html version of web page
 	htmlVersion, err := DetectHTMLTypeFromDoc(doc)
 	if err != nil {
 		htmlVersion = "UNDEFINED due to error:" + err.Error()
 	}
-	fmt.Println(htmlVersion)
+
 	responseBuilder(&response, "HTML Version", htmlVersion)
+
+	// find title of web page
 	title := getTitle(doc)
 	responseBuilder(&response, "Title", title)
+
+	//find each heading counts on the web page
+	// we holds each count on a map but maps are unordered structures
+	// because of that we sort keys of map (h1 to h6) and write to the response with order
 	responseBuilder(&response, "Heading Counts", "")
 	headings := getHeadingCount(doc)
 	keys := make([]string, 0)
 	for k, _ := range headings {
 		keys = append(keys, k)
-		fmt.Println(k)
 	}
 	sort.Strings(keys)
 
 	for _, heading := range keys {
 		responseBuilder(&response, heading, strconv.Itoa(headings[heading]))
 	}
+
+	// find all links on a web page and separate those links to internal and external links
 	allLinks := extractLinks(doc)
 	baseUrl := getBaseUrl(url)
 
-	//for _, link := range allLinks {
-	//	//fmt.Println(link)
-	//	responseBuilder(&response, "link", link)
-	//}
-	fmt.Println("base url: ", baseUrl)
 	internalLinks, externalLinks := separateLinks(baseUrl, allLinks)
 	responseBuilder(&response, "Amount of internal links", strconv.Itoa(len(internalLinks)))
 	responseBuilder(&response, "Amount of external links", strconv.Itoa(len(externalLinks)))
+
+	// find inaccessible links
+	// we use goroutines for checking each url, instead of waiting them one by one we call the urls concurrently
+	// for counting on concurrent goroutines a sync.WaitGroup variable defined and add worker for each goroutine
+	// we increase the inaccessible links amounts with atomic counter
+	// and waitgroup wait all gouroutines to finish their job and writes result to the response
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go getInaccessibleLinks(internalLinks, &wg)
-	//wg.Add(1)
+
 	go getInaccessibleLinks(externalLinks, &wg)
 	wg.Wait()
-	//wg.Wait()
-	fmt.Println("total amount:", atomic.LoadUint64(&amount))
+
 	amountString := fmt.Sprint(atomic.LoadUint64(&amount))
 	responseBuilder(&response, "Amount of inaccessible links", amountString)
-
 	amount = 0
+
+	// check if the login form exists
 	loginFormStatus := checkLoginForm(doc)
 	if loginFormStatus {
 		responseBuilder(&response, "Login Form", "exists")
 	} else {
 		responseBuilder(&response, "Login Form", "not found")
 	}
-	//for _, link := range internalLinks {
-	//	//fmt.Println(link)
-	//	responseBuilder(&response, "internal link", link)
-	//
-	//}
-	//externalLinks:=getExternalLinks(allLinks,internalLinks)
-	//for _, link := range externalLinks {
-	//	//fmt.Println(link)
-	//	responseBuilder(&response, "external link", link)
-	//
-	//}
+
 	return response
 }
 
-func checkLoginForm(doc *goquery.Document) bool {
-	fmt.Println(">>checkLoginForm()")
-	loginFormExist := false
-	doc.Find("input[type='password']").Each(func(i int, selection *goquery.Selection) {
-		//fmt.Println(selection.)
-		fmt.Println("input field:", selection.Get(0))
-		loginFormExist = true
+// Detect HTML Version From a http doc
+func DetectHTMLTypeFromDoc(doc *goquery.Document) (string, error) {
 
-	})
-	fmt.Println(loginFormExist)
-	fmt.Println("<<checkLoginForm()")
-	return loginFormExist
-}
+	var htmlVersion string
 
-func getBaseUrl(myurl string) string {
-	fmt.Println(">>getBaseUrl()")
-	u, err := url.Parse(myurl)
+	html, err := doc.Html()
 	if err != nil {
-		panic(err)
+		return htmlVersion, err
 	}
-	fmt.Println(u.Host)
-	return u.Host
+
+	htmlVersion = checkDoctype(html)
+
+	return htmlVersion, nil
+
 }
+
+// find doc type
+func checkDoctype(html string) string {
+	var version = "UNKNOWN"
+
+	for doctype, matcher := range doctypes {
+		match := strings.Contains(html, matcher)
+
+		if match == true {
+			version = doctype
+		}
+	}
+
+	return version
+}
+
+//find title of the web page
+func getTitle(doc *goquery.Document) string {
+	title := doc.Find("title").Text()
+
+	return title
+}
+
+//find each heading count
+func getHeadingCount(doc *goquery.Document) map[string]int {
+	headings := make(map[string]int)
+	headings["h1"] = 0
+	headings["h2"] = 0
+	headings["h2"] = 0
+	headings["h3"] = 0
+	headings["h4"] = 0
+	headings["h5"] = 0
+	headings["h6"] = 0
+
+	for heading, count := range headings {
+		doc.Find(heading).Each(func(i int, selection *goquery.Selection) {
+			count++
+
+		})
+		headings[heading] = count
+
+	}
+
+	return headings
+
+}
+
+// find all links on the web page by finding 'a' with 'href' attribute
 func extractLinks(doc *goquery.Document) []string {
 	foundUrls := []string{}
 	if doc != nil {
@@ -157,6 +158,10 @@ func extractLinks(doc *goquery.Document) []string {
 	}
 	return foundUrls
 }
+
+// seperate links to internal and external links
+// if link starts with given urls host name (base url) or only '/' it is an internal link
+// otherwise it is an external link
 func separateLinks(baseURL string, hrefs []string) ([]string, []string) {
 	internalUrls := []string{}
 	externalUrls := []string{}
@@ -176,106 +181,53 @@ func separateLinks(baseURL string, hrefs []string) ([]string, []string) {
 	return internalUrls, externalUrls
 }
 
-// Detect HTML Version From a http doc
-func DetectHTMLTypeFromDoc(doc *goquery.Document) (string, error) {
-	fmt.Println(">>DetectHTMLTypeFromDoc()")
-	var htmlVersion string
-
-	html, err := doc.Html()
-	if err != nil {
-		return htmlVersion, err
-	}
-
-	htmlVersion = checkDoctype(html)
-	fmt.Println("HTML version: ", htmlVersion)
-
-	return htmlVersion, nil
-
-}
-
-func getTitle(doc *goquery.Document) string {
-	title := doc.Find("title").Text()
-	fmt.Println("title: ", title)
-	return title
-}
-
-func getHeadingCount(doc *goquery.Document) map[string]int {
-	headings := make(map[string]int)
-	headings["h1"] = 0
-	headings["h2"] = 0
-	headings["h2"] = 0
-	headings["h3"] = 0
-	headings["h4"] = 0
-	headings["h5"] = 0
-	headings["h6"] = 0
-
-	for heading, count := range headings {
-		doc.Find(heading).Each(func(i int, selection *goquery.Selection) {
-			count++
-			//fmt.Println(selection.Contents())
-		})
-		headings[heading] = count
-		fmt.Println("total", heading, ":", count)
-	}
-
-	return headings
-
-}
-
-var doctypes = make(map[string]string)
-
-func init() {
-	doctypes["HTML 4.01 Strict"] = `"-//W3C//DTD HTML 4.01//EN"`
-	doctypes["HTML 4.01 Transitional"] = `"-//W3C//DTD HTML 4.01 Transitional//EN"`
-	doctypes["HTML 4.01 Frameset"] = `"-//W3C//DTD HTML 4.01 Frameset//EN"`
-	doctypes["XHTML 1.0 Strict"] = `"-//W3C//DTD XHTML 1.0 Strict//EN"`
-	doctypes["XHTML 1.0 Transitional"] = `"-//W3C//DTD XHTML 1.0 Transitional//EN"`
-	doctypes["XHTML 1.0 Frameset"] = `"-//W3C//DTD XHTML 1.0 Frameset//EN"`
-	doctypes["XHTML 1.1"] = `"-//W3C//DTD XHTML 1.1//EN"`
-	doctypes["HTML 5"] = `<!DOCTYPE html>`
-}
-func checkDoctype(html string) string {
-	var version = "UNKNOWN"
-
-	for doctype, matcher := range doctypes {
-		match := strings.Contains(html, matcher)
-
-		if match == true {
-			version = doctype
-		}
-	}
-
-	return version
-}
-
+// find inaccessible links
+// we add a wait group worker before checking each url concurrently
+// when it finish to check it give done signal to the wait group
 func getInaccessibleLinks(urls []string, wg *sync.WaitGroup) {
-	fmt.Println(">>getInaccessibleLinks()")
+
 	defer wg.Done()
-	//var wg sync.WaitGroup
+
 	for _, url := range urls {
 		wg.Add(1)
 
 		go checkUrl(url, wg)
-		//wg.Done()
+
 	}
-	//wg.Wait()
-	fmt.Println("<<getInaccessibleLinks()")
+
 }
+
+// checks the given url is accessible or not
+// if not accessible increase amount atomicly because we check urls in concurrent manner
+// if response code is not 200 we assume that url is inaccessible
 func checkUrl(url string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	url = verifyURL(url)
-	//fmt.Println("checkURL:",url)
+
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println("Error in get url: ", err)
+
 		atomic.AddUint64(&amount, 1)
-		fmt.Println("amount :", atomic.LoadUint64(&amount))
+
 		return
 	}
 	if resp.StatusCode != 200 {
-		fmt.Println(resp.StatusCode, url)
+
 		atomic.AddUint64(&amount, 1)
-		fmt.Println("amount :", atomic.LoadUint64(&amount))
+
 		return
 	}
+}
+
+// checks if the login form exist or not by checking the input field with password type
+func checkLoginForm(doc *goquery.Document) bool {
+
+	loginFormExist := false
+	doc.Find("input[type='password']").Each(func(i int, selection *goquery.Selection) {
+
+		loginFormExist = true
+
+	})
+
+	return loginFormExist
 }
